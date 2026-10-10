@@ -30,7 +30,7 @@ pub struct RunConfig {
 }
 
 pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
-    let api = match HidApi::new() {
+    let mut api = match HidApi::new() {
         Ok(api) => api,
         Err(err) => {
             log.log(&format!("hidapi init failed: {err}"));
@@ -61,7 +61,7 @@ pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
 
     while !CANCEL.load(Ordering::SeqCst) {
         if dev.is_none() {
-            dev = hid::open_controller(&api, &mut |msg| log.log(msg));
+            dev = hid::open_controller(&mut api, &mut |msg| log.log(msg));
             if dev.is_none() {
                 let now = Instant::now();
                 let due = last_not_found_log

@@ -45,7 +45,9 @@ fn rank(info: &DeviceInfo) -> u8 {
 }
 
 /// Open the first controller interface that delivers reports.
-pub fn open_controller(api: &HidApi, log: &mut dyn FnMut(&str)) -> Option<HidDevice> {
+pub fn open_controller(api: &mut HidApi, log: &mut dyn FnMut(&str)) -> Option<HidDevice> {
+    // The hidapi crate caches the device list; re-enumerate before each scan.
+    let _ = api.refresh_devices();
     let mut candidates: Vec<&DeviceInfo> = api.device_list().filter(|d| is_controller(d)).collect();
     candidates.sort_by_key(|d| rank(d));
     for info in candidates {
