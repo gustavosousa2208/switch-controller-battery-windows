@@ -4,3 +4,4 @@ __pycache__/
 logs/
 target/
 battery_samples.csv
+switch-battery.exe
