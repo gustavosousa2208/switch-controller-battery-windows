@@ -1,0 +1,29 @@
+[package]
+name = "switch-battery"
+version = "0.2.0"
+edition = "2021"
+description = "Windows battery badge for Switch-mode controllers (e.g. 8BitDo Lite 2)"
+license = "MIT"
+
+[[bin]]
+name = "switch-battery"
+path = "src/main.rs"
+
+[dependencies]
+hidapi = "2"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Devices",
+    "Win32_Devices_Properties",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_System_Console",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "s"
+codegen-units = 1

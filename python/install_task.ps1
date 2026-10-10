@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'SwitchControllerBattery'
+$TaskName = 'SwitchControllerBatteryPython'
 $ProjectDir = $PSScriptRoot
 $ScriptPath = Join-Path $ProjectDir 'battery_publisher.py'
 $UserId = "$env:USERDOMAIN\$env:USERNAME"

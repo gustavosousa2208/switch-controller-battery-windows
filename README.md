@@ -1,4 +1,4 @@
-# Switch-mode controller battery in Windows Settings
+# switch-battery
 
 Show the battery level of a Nintendo-Switch-mode controller (e.g. an 8BitDo
 Lite 2) in **Windows Settings -> Bluetooth & devices**, right on its
@@ -15,11 +15,11 @@ runs in user mode and is fully reversible.
    PID `2009`) and reads the battery byte from HID report `0x30` (full) or
    `0x21` (subcommand reply).
 2. **Request full reports** - if only simple button reports (`0x3F`) are
-   arriving, the tool sends the standard `0x03 0x30` subcommand itself. No
-   Steam, game, or companion app is needed for battery data to flow, and it
-   re-sends the request automatically if the stream stops.
+   arriving, the tool sends the standard `0x03 0x30` subcommand itself, so no
+   Steam, game or companion app is needed. It re-sends the request
+   automatically if the stream stops (mode revert, reconnection).
 3. **Publish** - it writes the canonical Windows battery property schema on
-   the controller's Bluetooth devnode:
+   the controller's Bluetooth devnode (found automatically by VID/PID):
 
    | Property `{104EA319-6EE2-4701-BD47-8DDBF425BBE5}` | Type | Meaning |
    |---|---|---|
@@ -27,84 +27,77 @@ runs in user mode and is fully reversible.
    | PID 3 | `Boolean` | charging |
    | PID 7 | `FileTime` | last update |
 
-   Windows Settings displays the value for the paired controller entry.
+   Windows Settings displays the value for the paired controller entry, live.
 
 Verified end to end with an 8BitDo Lite 2 in Switch mode on Windows 11
 (build 26200): the badge shows the real level, updates live, disappears when
-the controller powers off and returns when it reconnects.
+the controller powers off and returns when it reconnects. Other controllers
+that emulate the Nintendo Switch Pro Controller should work identically.
 
-## Requirements
+## Quick start (single executable)
 
-- Windows 10 or 11
-- Python 3.8+ with [hidapi](https://pypi.org/project/hidapi/):
-  `python -m pip install hidapi`
-- A controller in Switch / Pro Controller mode. Developed with the
-  **8BitDo Lite 2**; other controllers that emulate the Nintendo Switch Pro
-  Controller should work identically.
-- Administrator rights only for the scheduled task (writing devnode
-  properties requires elevation).
-
-## Install (recommended): hidden logon task
-
-From an **elevated** PowerShell in this folder:
+Build (Rust 1.75+; produces one self-contained exe, no runtime needed):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install_task.ps1
+cargo build --release
 ```
 
-This registers a `SwitchControllerBattery` task that:
+The result is `target\release\switch-battery.exe`.
 
-- starts at logon (30 s delay) and runs `pythonw.exe` hidden (no console),
-- uses highest privileges (required for the property writes),
-- **retries every minute if the publisher is not running** (watchdog), so a
-  crash or kill is repaired within ~1 minute,
-- logs to `logs\publisher.log` (rotated at 1 MB).
-
-The installer also verifies the watchdog by killing the process once and
-watching it come back (skip with `-SkipRestartTest`).
-
-Uninstall:
+From an **elevated** terminal:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install_task.ps1 -Remove
+.\switch-battery.exe install     # register the hidden logon task and start it
+.\switch-battery.exe status      # task state + current battery property
+.\switch-battery.exe uninstall   # remove the task
 ```
 
-## Manual use
+- `install` registers a `SwitchControllerBattery` scheduled task: starts at
+  logon, runs hidden, uses highest privileges, and **retries every minute
+  while the publisher is not running** (watchdog). It also verifies the
+  watchdog once by killing the process and watching it come back
+  (`--no-test` skips that check).
+- Logs go to `logs\publisher.log` next to the executable (rotated at 1 MB).
+- Manual foreground run: `.\switch-battery.exe run` (Ctrl+C stops and clears).
 
-```powershell
-python battery_publisher.py     # elevated: keeps the Settings badge updated
-python battery_reader.py        # no elevation needed: prints + logs samples
+## Commands
+
+```
+switch-battery run [--instance ID] [--heartbeat S] [--refresh S] [--log PATH] [--hidden]
+switch-battery install [--no-test]
+switch-battery uninstall
+switch-battery status
+switch-battery read [--instance ID]       # raw property read (diagnostic)
+switch-battery set VALUE [--instance ID]  # write a test value (elevated)
+switch-battery clear [--instance ID]      # delete the properties (elevated)
 ```
 
-`battery_reader.py` writes `battery_samples.csv` and is a quick way to verify
-what the controller reports.
+## Python reference tools
 
-## Diagnostics
+The original implementation lives in `python/` and still works (requires
+Python 3.8+ and `pip install hidapi`):
 
-`devnode_property_test.py` inspects the battery properties on the controller
-devnode (auto-discovered by VID/PID):
+- `python\battery_publisher.py` - the publisher (elevated for writes)
+- `python\battery_reader.py` - sampler / CSV logger (no elevation needed)
+- `python\devnode_property_test.py` - property diagnostics
+- `python\install_task.ps1` - schedules the Python variant as the
+  `SwitchControllerBatteryPython` task
 
-```powershell
-python devnode_property_test.py --action list
-python devnode_property_test.py --action read
-python devnode_property_test.py --action set --value 42   # elevation needed
-python devnode_property_test.py --action clear            # elevation needed
-```
+The Rust executable replaces all of them for end users.
 
 ## Limitations / notes
 
-- Bluetooth **classic** (HID) controllers only; the tool targets the classic
-  Switch input protocol.
-- The percent comes from the controller's coarse level code (0..8) with a
-  linear mapping; the controller itself updates it slowly.
+- Bluetooth **classic** (HID) controllers only.
+- The percent is derived from the controller's coarse level code (0..8) with
+  a linear mapping; the controller itself updates it slowly.
 - Devnode properties are soft: they are cleared when the device
-  re-enumerates, which is why the publisher re-asserts them (heartbeat every
-  5 s) and clears them on disconnect.
+  re-enumerates, which is why the publisher re-asserts them every 5 s
+  (heartbeat) and clears them on disconnect.
 - Writing devnode properties and registering a privileged task may be flagged
-  by some antivirus/EDR suites; all code here is small and readable.
+  by some antivirus/EDR suites; the code here is small, readable and open.
 - If the full-report request is rejected by a particular driver stack, the
   publisher falls back to passive mode (it still tracks battery whenever
-  `0x30`/`0x21` reports arrive).
+  `0x30`/`0x21` reports arrive, e.g. while a game or Steam negotiates them).
 
 ## Credits
 
