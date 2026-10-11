@@ -58,6 +58,7 @@ pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
     let mut last_not_found_log: Option<Instant> = None;
     let mut packet_counter: u8 = 0;
     let mut last_0x30 = Instant::now();
+    let mut last_any_report = Instant::now();
 
     while !CANCEL.load(Ordering::SeqCst) {
         if dev.is_none() {
@@ -77,6 +78,7 @@ pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
             seen_battery = false;
             last_hint = Instant::now();
             last_0x30 = Instant::now();
+            last_any_report = Instant::now();
             if cfg.refresh.is_some() {
                 let ok = hid::request_full_mode(dev.as_ref().unwrap(), packet_counter);
                 packet_counter = (packet_counter + 1) & 0x0F;
@@ -91,6 +93,7 @@ pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
         let mut buf = [0u8; 512];
         match dev.as_ref().unwrap().read_timeout(&mut buf, 5) {
             Ok(n) if n >= 3 && hid::BATTERY_REPORT_IDS.contains(&buf[0]) => {
+                last_any_report = Instant::now();
                 seen_battery = true;
                 if buf[0] == 0x30 {
                     last_0x30 = Instant::now();
@@ -106,6 +109,7 @@ pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
                 }
             }
             Ok(n) if n >= 1 => {
+                last_any_report = Instant::now();
                 if !seen_battery && last_hint.elapsed() >= Duration::from_secs(30) {
                     last_hint = Instant::now();
                     log.log("waiting for battery reports; the full-mode request has been sent");
@@ -127,6 +131,16 @@ pub fn run(cfg: &RunConfig, log: &mut Logger) -> i32 {
                 std::thread::sleep(Duration::from_secs(1));
                 continue;
             }
+        }
+
+        // Silence guard: a live controller streams reports continuously
+        // (50-100/s). A handle that sees nothing at all is stale (observed
+        // after overnight sleep/reconnect cycles) - close and reopen it.
+        if dev.is_some() && last_any_report.elapsed() >= Duration::from_secs(30) {
+            log.log("no reports for 30 s; reopening the controller handle");
+            dev = None;
+            last_not_found_log = None;
+            continue;
         }
 
         // Heartbeat: re-assert the last published value so soft devnode

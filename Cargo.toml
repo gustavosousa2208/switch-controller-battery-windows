@@ -1,6 +1,6 @@
 [package]
 name = "switch-battery"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Windows battery badge for Switch-mode controllers (e.g. 8BitDo Lite 2)"
 license = "MIT"
